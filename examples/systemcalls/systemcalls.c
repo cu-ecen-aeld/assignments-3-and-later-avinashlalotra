@@ -1,5 +1,6 @@
 #include "systemcalls.h"
-
+#include<errno.h>
+#include<fcntl.h>
 /**
  * @param cmd the command to execute with system()
  * @return true if the command in @param cmd was executed
@@ -16,6 +17,8 @@ bool do_system(const char *cmd)
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
+   if (system(cmd) != 0){
+	return false;}
 
     return true;
 }
@@ -33,37 +36,50 @@ bool do_system(const char *cmd)
 *   fork, waitpid, or execv() command, or if a non-zero return value was returned
 *   by the command issued in @param arguments with the specified arguments.
 */
-
-bool do_exec(int count, ...)
-{
+bool do_exec(int count, ...) {
     va_list args;
     va_start(args, count);
-    char * command[count+1];
-    int i;
-    for(i=0; i<count; i++)
-    {
+
+    char *command[count + 1]; // Array to hold command and arguments
+    for (int i = 0; i < count; i++) {
         command[i] = va_arg(args, char *);
     }
-    command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
-    // and may be removed
-    command[count] = command[count];
+    command[count] = NULL; // Null-terminate the argument list
+    va_end(args);
 
+    pid_t pid = fork(); // Create a new process
+
+    if (pid == 0) {
+        execv(command[0], command);
+        perror("execv failed");
+       exit(1);
+       
+    } else if (pid > 0) {
+    
+        int wstatus;
+        waitpid(pid, &wstatus, 0);
+        if (WIFEXITED(wstatus)) {
+		if (WEXITSTATUS(wstatus) == 0){
+            return true;}
+		else{
+		return false;}
+        } else {
+            return false; // Child did not exit normally
+        }
+    } else {
+    
+        perror("fork failed"); // Handle fork failure
+        return false; // Return false if fork fails
+    }
+}
 /*
  * TODO:
  *   Execute a system command by calling fork, execv(),
  *   and wait instead of system (see LSP page 161).
  *   Use the command[0] as the full path to the command to execute
  *   (first argument to execv), and use the remaining arguments
- *   as second argument to the execv() command.
- *
+ *   as second argument to the execv() 
 */
-
-    va_end(args);
-
-    return true;
-}
-
 /**
 * @param outputfile - The full path to the file to write with command output.
 *   This file will be closed at completion of the function call.
@@ -79,10 +95,9 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     {
         command[i] = va_arg(args, char *);
     }
-    command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
-    // and may be removed
-    command[count] = command[count];
+   
+   command[count] = NULL;
+   
 
 
 /*
@@ -92,8 +107,45 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *   The rest of the behaviour is same as do_exec()
  *
 */
+int fd = open(outputfile, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    if (fd == -1) {
+        perror("open failed");
+        return false; // Failed to open the file
+    }
 
-    va_end(args);
+    pid_t pid = fork();
 
-    return true;
+    if (pid == 0) {
+	// Redirect stdout to the output file
+    if (dup2(fd, 1) == -1) {
+        perror("dup2 failed");
+        close(fd);
+        //return false; // Failed to redirect
+    }
+    
+        execv(command[0], command);
+        perror("execv failed");
+        exit(1);
+    } else if (pid > 0) {
+	     close(fd);
+
+        int wstatus;
+        waitpid(pid, &wstatus, 0);
+        if (WIFEXITED(wstatus)) {
+            if( WEXITSTATUS(wstatus)==0){
+            return true;}
+	    else{
+	    return false;}
+        } else {
+            return false; 
+        }
+    } else {
+	     close(fd);
+
+        perror("fork failed"); 
+        return false; 
+    }
+
 }
+
+
